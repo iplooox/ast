@@ -1,6 +1,5 @@
-import { Project, SyntaxKind, SourceFile, Node, ts, VariableStatement, Identifier } from "ts-simple-ast";
+import { Project, SyntaxKind, SourceFile, Node, ts, VariableStatement, Identifier, ClassDeclaration } from "ts-simple-ast";
 import * as async from "async";
-import { stringify } from 'querystring';
 
 interface PathWithVerb {
     path: string | undefined;
@@ -21,12 +20,16 @@ class ReferenceScanner {
     private project = new Project();
     private requestsSourceFiles: SourceFile[] = [];
     private webConfig: SourceFile | undefined = undefined;
-    //readonly foundRequests: Request[] = [];
     readonly foundRequests: Map<string, Map<string, Set<string>>> = new Map<string, Map<string, Set<string>>>();
+
     constructor() {
         this.getFiles();
-        var now = new Date();
+    }
+
+    scan(): void {
         this.scanNameSpace();
+
+        const now = new Date();
 
         this.foundRequests.forEach((value, key) => {
             // if (!Array.from(value.values()).some(x => Array.from(x).length > 1)) {
@@ -79,144 +82,158 @@ class ReferenceScanner {
     }
 
     scanNameSpace() {
-        var func = async (sourceFile: SourceFile) => {
-            console.log(`Starting scanning ${sourceFile.getBaseName()}`);
-            const requestClassList = sourceFile.getDescendantsOfKind(SyntaxKind.ClassDeclaration);
+        async.each(this.requestsSourceFiles, this.scanClasses);
+    }
 
-            for (const requestClass of requestClassList) {
-                const references = requestClass.findReferencesAsNodes(); // findReferences is slower.
-                if (references.length !== 0) {
-                    const requestName = requestClass.getFirstDescendantByKindOrThrow(SyntaxKind.Identifier);
-                    if (requestName === undefined) {
-                        console.error("RequestName was not found");
-                        continue;
-                    }
+    scanClasses = (sourceFile: SourceFile) => {
+        console.log(`Starting scanning ${sourceFile.getBaseName()}`);
+        const requestClassList = sourceFile.getDescendantsOfKind(SyntaxKind.ClassDeclaration);
 
-                    let verifiedReferences: { reference: Node<ts.Node>, methods: string[] }[] = [];
+        const referenceMap = this.findReferencesOfClasses(requestClassList);
 
-                    async.each(references, x => {
-                        if (requestName.getText() === "PipelineCopyRequest") {
-                            console.log("hej");
-                        }
+        for (const requestReferences of referenceMap) {
 
-                        const newAssigmentVariableStatement = this.getOnlyNewAssignmentVariableStatementNode(x);
-                        if (newAssigmentVariableStatement === undefined) {
+            const requestClass = requestReferences[0];
+            const requestName = requestReferences[0].getName();
+            const references = requestReferences[1];
+
+            if (references.length !== 0)
+                return;
+
+            let verifiedReferences: { reference: Node<ts.Node>, methods: string[] }[] = [];
+
+            references.forEach(x => {
+                const newAssigmentVariableStatement = this.getOnlyNewAssignmentVariableStatementNode(x);
+                if (newAssigmentVariableStatement === undefined) {
+                    return;
+                }
+                const methods: string[] = [];
+
+                const hej2 = newAssigmentVariableStatement.getNextSiblings();
+                async.each(hej2, y => {
+                    let method: string = "";
+                    y.getChildrenOfKind(SyntaxKind.BinaryExpression).forEach(be => {
+                        if (be === undefined) {
                             return;
                         }
-                        const methods: string[] = [];
-
-                        const hej2 = newAssigmentVariableStatement.getNextSiblings();
-                        async.each(hej2, y => {
-                            let method: string = "";
-                            y.getChildrenOfKind(SyntaxKind.BinaryExpression).forEach(be => {
-                                if (be === undefined) {
-                                    return;
-                                }
-                                var token = be.getOperatorToken();
-                                if (token === undefined) {
-                                    return;
-                                }
-                                // We found an assignment
-                                if (token.getKind() === SyntaxKind.EqualsToken) {
-                                    var left = be.getLeft();
-                                    if (left === undefined) {
-                                        return;
-                                    }
-                                    var lastLeft = left.getLastChildByKind(SyntaxKind.Identifier);
-                                    if (lastLeft === undefined) {
-                                        return;
-                                    }
-                                    var lastLeftText = lastLeft.getText();
-                                    if (lastLeftText !== "method") {
-                                        return;
-                                    }
-                                    // We got an assignment of method/overrideMethodWith
-                                    var right = be.getRight();
-                                    if (right === undefined) {
-                                        return;
-                                    }
-                                    var lastRight = right.getLastChildByKind(SyntaxKind.Identifier);
-                                    if (lastRight === undefined) {
-                                        return;
-                                    }
-                                    method = lastRight.getText();
-                                }
-                            });
-                            if (method !== "") {
-                                methods.push(method.toUpperCase());
-                            }
-                        });
-
-                        if (methods.length === 0) {
-                            var defaultMethod = "GET";
-                            requestClass.getProperties()
-                            requestClass.getMembers().forEach(m => {
-                                var foundVerbs = false;
-                                m.forEachDescendant((d, t) => {
-                                    switch (d.getKind()) {
-                                        case SyntaxKind.Identifier:
-                                            if (d.getText() === "verbs") {
-                                                foundVerbs = true;
-                                            } else if (foundVerbs) {
-                                                var foundMethod = d.getText();
-                                                if (foundMethod === undefined) {
-                                                    throw new Error("WHERE IS THE VERB!?! " + requestName.getText());
-                                                }
-                                                defaultMethod = foundMethod.toUpperCase();
-                                                t.stop();
-                                            } else {
-                                                t.up();
-                                            }
-                                            break;
-                                        default:
-                                            break;
-                                    }
-                                });
-                            });
-                            methods.push(defaultMethod);
+                        var token = be.getOperatorToken();
+                        if (token === undefined) {
+                            return;
                         }
-
-                        // We found a new assignment of the request, it's used
-                        verifiedReferences.push({ reference: x, methods });
+                        // We found an assignment
+                        if (token.getKind() === SyntaxKind.EqualsToken) {
+                            var left = be.getLeft();
+                            if (left === undefined) {
+                                return;
+                            }
+                            var lastLeft = left.getLastChildByKind(SyntaxKind.Identifier);
+                            if (lastLeft === undefined) {
+                                return;
+                            }
+                            var lastLeftText = lastLeft.getText();
+                            if (lastLeftText !== "method") {
+                                return;
+                            }
+                            // We got an assignment of method/overrideMethodWith
+                            var right = be.getRight();
+                            if (right === undefined) {
+                                return;
+                            }
+                            var lastRight = right.getLastChildByKind(SyntaxKind.Identifier);
+                            if (lastRight === undefined) {
+                                return;
+                            }
+                            method = lastRight.getText();
+                        }
                     });
-
-                    if (verifiedReferences.length === 0) {
-                        return;
+                    if (method !== "") {
+                        methods.push(method.toUpperCase());
                     }
-                    var name = requestName.getText();
-                    if (!this.foundRequests.has(name)) {
-                        this.foundRequests.set(name, new Map<string, Set<string>>());
+                });
+
+                if (methods.length === 0)
+                    this.findFirstVerb(methods, requestClass, requestName);
+
+                // We found a new assignment of the request, it's used
+                verifiedReferences.push({ reference: x, methods });
+            });
+
+            if (verifiedReferences.length === 0)
+                return;
+
+            if (!this.foundRequests.has(requestName || ""))
+                this.foundRequests.set(name, new Map<string, Set<string>>());
+
+            var requestMap = this.foundRequests.get(name);
+
+            verifiedReferences.forEach(x => {
+                if (this.webConfig === undefined)
+                    return;
+
+                var path = this.webConfig.getRelativePathTo(x.reference.getSourceFile());
+
+                if (requestMap !== undefined) {
+                    if (!requestMap.has(path)) {
+                        requestMap.set(path, new Set<string>());
                     }
 
-                    var requestMap = this.foundRequests.get(name);
-
-                    verifiedReferences.forEach(x => {
-                        if (this.webConfig !== undefined) {
-                            var path = this.webConfig.getRelativePathTo(x.reference.getSourceFile());
-
-                            if (requestMap !== undefined) {
-                                if (!requestMap.has(path)) {
-                                    requestMap.set(path, new Set<string>());
-                                }
-
-                                var methodSet = requestMap.get(path);
-                                x.methods.forEach(y => {
-                                    if (methodSet !== undefined) {
-                                        methodSet.add(y);
-                                    }
-                                });
-                            }
+                    var methodSet = requestMap.get(path);
+                    x.methods.forEach(y => {
+                        if (methodSet !== undefined) {
+                            methodSet.add(y);
                         }
-                    })
-                    // const foundRequest = new Request(requestName.getText(), verifiedReferences.length);
-                    // foundRequest.paths = verifiedReferences.map(x => { return { path: x.reference.getSourceFile().getFilePath(), verbs: x.methods } as PathWithVerb; });
-
-                    // this.foundRequests.push(foundRequest);
+                    });
                 }
-            }
-        };
-        async.each(this.requestsSourceFiles, func);
+            });
+        }
+    };
+
+    private findFirstVerb(methods: string[], requestClass: ClassDeclaration, requestName: string | undefined) {
+        var defaultMethod = "GET";
+        requestClass.getProperties();
+        requestClass.getMembers().forEach(m => {
+            var foundVerbs = false;
+            m.forEachDescendant((d, t) => {
+                switch (d.getKind()) {
+                    case SyntaxKind.Identifier:
+                        if (d.getText() === "verbs") {
+                            foundVerbs = true;
+                        }
+                        else if (foundVerbs) {
+                            var foundMethod = d.getText();
+                            if (foundMethod === undefined) {
+                                throw new Error("WHERE IS THE VERB!?! " + requestName);
+                            }
+                            defaultMethod = foundMethod.toUpperCase();
+                            t.stop();
+                        }
+                        else {
+                            t.up();
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            });
+        });
+        methods.push(defaultMethod);
     }
+
+    findReferencesOfClasses(requestClassList: ClassDeclaration[]): Map<ClassDeclaration, Node<ts.Node>[]> {
+        let references = new Map<ClassDeclaration, Node<ts.Node>[]>();
+
+        var t = process.hrtime();
+
+        for (const requestClass of requestClassList)
+            references.set(requestClass, requestClass.findReferencesAsNodes());
+
+        t = process.hrtime(t);
+
+        console.log('Finding references took %d seconds and %d nanoseconds', t[0], t[1]);
+
+        return references;
+    }
+
     getParentOfKindRecursive(node: Node<ts.Node>, kind: number): Node<ts.Node> | undefined {
         if (node === undefined) {
             return node;
@@ -248,3 +265,5 @@ class ReferenceScanner {
 }
 
 const hejsa = new ReferenceScanner();
+
+hejsa.scan();
