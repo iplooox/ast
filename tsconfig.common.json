@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "target": "es5",
+        "module": "commonjs",
+        "strict": true,
+        "sourceMap": true,
+        "removeComments": false,
+        "experimentalDecorators": true,
+        "forceConsistentCasingInFileNames": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitReturns": true,
+        "stripInternal": true,
+        "typeRoots": [
+            "node_modules/@types"
+        ],
+        "downlevelIteration": true,
+        "importHelpers": true,
+        "lib": [
+            "es2015",
+            "dom"
+        ],
+    },
+    "compileOnSave": false
+}

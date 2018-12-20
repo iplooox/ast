@@ -1,0 +1,19 @@
+{
+  "name": "ast",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "debug": "ts-node --inspect=10001 --debug-brk --ignore false ./src/app.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/async": "^2.0.50",
+    "@types/node": "^10.12.18",
+    "async": "^2.6.1",
+    "ts-node": "^7.0.1",
+    "ts-simple-ast": "^20.0.0",
+    "typescript": "^3.2.2"
+  }
+}
