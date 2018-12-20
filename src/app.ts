@@ -20,6 +20,7 @@ class Request {
 class ReferenceScanner {
     private project = new Project();
     private requestsSourceFiles: SourceFile[] = [];
+    private webConfig: SourceFile | undefined = undefined;
     //readonly foundRequests: Request[] = [];
     readonly foundRequests: Map<string, Map<string, Set<string>>> = new Map<string, Map<string, Set<string>>>();
     constructor() {
@@ -29,6 +30,9 @@ class ReferenceScanner {
 
         this.foundRequests.forEach((value, key) => {
             // if (!Array.from(value.values()).some(x => Array.from(x).length > 1)) {
+            //     return;
+            // }
+            // if (Array.from(value.values()).length < 2) {
             //     return;
             // }
             console.log(`Request: ${key}`);
@@ -68,6 +72,7 @@ class ReferenceScanner {
         const filesToSkipFromScanning = new Set(["standardRequest.ts"]);
         this.requestsSourceFiles = requestDirectory.getSourceFiles().filter(x => { return !filesToSkipFromScanning.has(x.getBaseName()); });
 
+        this.webConfig = this.project.addExistingSourceFile("../WebVersion/WorkBook.WebSite/web.config");
 
         console.log(`Found ${this.project.getSourceFiles().length} source files.`);
         console.log(`Found ${this.requestsSourceFiles.length} source files in request directory`);
@@ -143,7 +148,32 @@ class ReferenceScanner {
                         });
 
                         if (methods.length === 0) {
-                            methods.push("GET");
+                            var defaultMethod = "GET";
+                            requestClass.getProperties()
+                            requestClass.getMembers().forEach(m => {
+                                var foundVerbs = false;
+                                m.forEachDescendant((d, t) => {
+                                    switch (d.getKind()) {
+                                        case SyntaxKind.Identifier:
+                                            if (d.getText() === "verbs") {
+                                                foundVerbs = true;
+                                            } else if (foundVerbs) {
+                                                var foundMethod = d.getText();
+                                                if (foundMethod === undefined) {
+                                                    throw new Error("WHERE IS THE VERB!?! " + requestName.getText());
+                                                }
+                                                defaultMethod = foundMethod.toUpperCase();
+                                                t.stop();
+                                            } else {
+                                                t.up();
+                                            }
+                                            break;
+                                        default:
+                                            break;
+                                    }
+                                });
+                            });
+                            methods.push(defaultMethod);
                         }
 
                         // We found a new assignment of the request, it's used
@@ -161,19 +191,21 @@ class ReferenceScanner {
                     var requestMap = this.foundRequests.get(name);
 
                     verifiedReferences.forEach(x => {
-                        var path = x.reference.getSourceFile().getFilePath();
+                        if (this.webConfig !== undefined) {
+                            var path = this.webConfig.getRelativePathTo(x.reference.getSourceFile());
 
-                        if (requestMap !== undefined) {
-                            if (!requestMap.has(path)) {
-                                requestMap.set(path, new Set<string>());
-                            }
-
-                            var methodSet = requestMap.get(path);
-                            x.methods.forEach(y => {
-                                if (methodSet !== undefined) {
-                                    methodSet.add(y);
+                            if (requestMap !== undefined) {
+                                if (!requestMap.has(path)) {
+                                    requestMap.set(path, new Set<string>());
                                 }
-                            });
+
+                                var methodSet = requestMap.get(path);
+                                x.methods.forEach(y => {
+                                    if (methodSet !== undefined) {
+                                        methodSet.add(y);
+                                    }
+                                });
+                            }
                         }
                     })
                     // const foundRequest = new Request(requestName.getText(), verifiedReferences.length);
