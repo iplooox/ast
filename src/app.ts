@@ -1,20 +1,6 @@
-import { Project, SyntaxKind, SourceFile, Node, ts, VariableStatement, Identifier, ClassDeclaration } from "ts-simple-ast";
+import { Project, SyntaxKind, SourceFile, Node, ts, VariableStatement, Identifier, ClassDeclaration, ImportSpecifier, ImportDeclaration } from "ts-simple-ast";
 import * as async from "async";
-
-interface PathWithVerb {
-    path: string | undefined;
-    verbs: string[];
-}
-
-class Request {
-    name: string = "";
-    references: number = 0;
-    paths: PathWithVerb[] = [];
-    constructor(name: string, referncesCount: number) {
-        this.name = name;
-        this.references = referncesCount;
-    }
-}
+import { stringify } from 'querystring';
 
 class ReferenceScanner {
     private project = new Project();
@@ -24,6 +10,81 @@ class ReferenceScanner {
 
     constructor() {
         this.getFiles();
+    }
+
+    debug() {
+        const directories = this.project.getDirectory("../WebVersion/WorkBook.WebSite/typescript")
+        const files = directories!.getDescendantSourceFiles()
+        const requestReferences = new Map<string, string[]>(); //Path / RequestName
+        const usedRequests = new Map<string, Node<ts.Node>[]>()
+
+        files.forEach(file => {
+            if (file.isDeclarationFile() || file.isFromExternalLibrary() || file.isInNodeModules())
+                return;
+
+            console.log(file.getBaseName());
+            file.forEachDescendant((x, t) => {
+                switch (x.getKind()) {
+                    case SyntaxKind.ImportDeclaration:
+                        if (x instanceof ImportDeclaration) {
+                            const sourcefile = x.getModuleSpecifierSourceFile();
+
+                            if (sourcefile !== undefined && sourcefile.getDirectory().getBaseName() == "requests") {
+                                const namedImports = x.getImportClauseOrThrow().getChildrenOfKind(SyntaxKind.NamedImports);
+                                if (namedImports.length == 0)
+                                    return;
+
+                                const requestsNames: string[] = [];
+
+                                namedImports.forEach(importo => {
+                                    const requestNameNodes = importo.getChildrenOfKind(SyntaxKind.SyntaxList)
+                                    if (requestNameNodes.length === 0)
+                                        return;
+
+                                    namedImports.forEach(x => x.getChildren().forEach(y => {
+                                        const getImportSpecifiers = y.getChildrenOfKind(SyntaxKind.ImportSpecifier)
+
+                                        getImportSpecifiers.forEach(x => requestsNames.push(x.getText()))
+                                    }))
+
+                                    // requestNameNodes.forEach(x => {
+                                    //     requestsNames.push(x.getText());
+                                    // });
+                                });
+
+                                if (requestsNames.length === 0)
+                                    return;
+
+                                console.log(requestsNames);
+
+                            }
+                        }
+
+                        console.log("hej");
+
+
+                        break;
+                    case SyntaxKind.NewExpression:
+                        let requestIdentifier = x.getFirstChildByKind(SyntaxKind.Identifier);
+                        if (requestIdentifier === undefined)
+                            return;
+
+                        const requestName = requestIdentifier.getText();
+                        usedRequests.has(requestName) ? usedRequests.get(requestName)!.push(x) : usedRequests.set(requestName, [x])
+
+                        break;
+                    default:
+                }
+            })
+
+
+
+            console.log(file.getTypeReferenceDirectives().length)
+        });
+
+        console.log(usedRequests.keys());
+
+        console.log("hej")
     }
 
     scan(): void {
@@ -229,7 +290,7 @@ class ReferenceScanner {
 
         t = process.hrtime(t);
 
-        console.log('Finding references took %d seconds and %d nanoseconds', t[0], t[1]);
+        console.log('Finding references for %d took %d seconds and %d nanoseconds', requestClassList.length, t[0], t[1]);
 
         return references;
     }
@@ -266,4 +327,5 @@ class ReferenceScanner {
 
 const hejsa = new ReferenceScanner();
 
-hejsa.scan();
+//hejsa.scan();
+hejsa.debug();
