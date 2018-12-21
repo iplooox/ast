@@ -1,10 +1,18 @@
 import { Project, SyntaxKind, SourceFile, Node, ts, VariableStatement, Identifier, ClassDeclaration, ImportSpecifier, ImportDeclaration } from "ts-simple-ast";
 import * as async from "async";
-import { stringify } from 'querystring';
 
-class ReferenceScanner {
+export class ReferenceScanner {
     private project = new Project();
-    private requestsSourceFiles: SourceFile[] = [];
+    private _requestsSourceFiles: SourceFile[] = [];
+    public get requestsSourceFiles(): SourceFile[] {
+        return this._requestsSourceFiles;
+    }
+    public set requestsSourceFiles(value: SourceFile[]) {
+        if (!Array.isArray(value) || value.length === 0)
+            return;
+
+        this._requestsSourceFiles = value;
+    }
     private webConfig: SourceFile | undefined = undefined;
     readonly foundRequests: Map<string, Map<string, Set<string>>> = new Map<string, Map<string, Set<string>>>();
 
